@@ -4,38 +4,13 @@ metadata:
   name: webapp
 
 ---
-apiVersion: v1
-kind: Service
-metadata:
-  name: webapp
-  namespace: webapp
-  labels:
-    app: webapp
-spec:
-  type: ClusterIP
-  selector:
-    app: webapp
-  ports:
-    - name: http
-      port: 80
-      targetPort: 8080
-
----
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: webapp
   namespace: webapp
-  labels:
-    app: webapp
 spec:
   replicas: 2
-  strategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxUnavailable: 0
-      maxSurge: 1
-  minReadySeconds: 10
 
   selector:
     matchLabels:
@@ -46,39 +21,11 @@ spec:
       labels:
         app: webapp
     spec:
-      terminationGracePeriodSeconds: 30
-      topologySpreadConstraints:
-        - maxSkew: 1
-          topologyKey: topology.kubernetes.io/zone
-          whenUnsatisfiable: DoNotSchedule
-          labelSelector:
-            matchLabels:
-              app: webapp
-        - maxSkew: 1
-          topologyKey: kubernetes.io/hostname
-          whenUnsatisfiable: ScheduleAnyway
-          labelSelector:
-            matchLabels:
-              app: webapp
-
-      affinity:
-        podAntiAffinity:
-          preferredDuringSchedulingIgnoredDuringExecution:
-            - weight: 100
-              podAffinityTerm:
-                topologyKey: kubernetes.io/hostname
-                labelSelector:
-                  matchLabels:
-                    app: webapp
-
       containers:
         - name: webapp
           image: ghcr.io/example/webapp:1.0.0
-          imagePullPolicy: IfNotPresent
-
           ports:
-            - name: http
-              containerPort: 8080
+            - containerPort: 8080
           resources:
             requests:
               cpu: "200m"
@@ -89,44 +36,33 @@ spec:
           startupProbe:
             httpGet:
               path: /startup
-              port: http
+              port: 8080
             periodSeconds: 2
             failureThreshold: 10
-            timeoutSeconds: 1
-
           readinessProbe:
             httpGet:
               path: /ready
-              port: http
-            initialDelaySeconds: 0
+              port: 8080
             periodSeconds: 5
-            failureThreshold: 3
-            timeoutSeconds: 1
           livenessProbe:
             httpGet:
               path: /health
-              port: http
-            initialDelaySeconds: 15
+              port: 8080
             periodSeconds: 10
-            failureThreshold: 3
-            timeoutSeconds: 1
-
-          lifecycle:
-            preStop:
-              exec:
-                command: ["/bin/sh", "-c", "sleep 10"]
+            initialDelaySeconds: 15
 
 ---
-apiVersion: policy/v1
-kind: PodDisruptionBudget
+apiVersion: v1
+kind: Service
 metadata:
-  name: webapp-pdb
+  name: webapp
   namespace: webapp
 spec:
-  minAvailable: 1
   selector:
-    matchLabels:
-      app: webapp
+    app: webapp
+  ports:
+    - port: 80
+      targetPort: 8080
 
 ---
 apiVersion: autoscaling/v2
@@ -139,10 +75,8 @@ spec:
     apiVersion: apps/v1
     kind: Deployment
     name: webapp
-
   minReplicas: 2
   maxReplicas: 6
-
   metrics:
     - type: Resource
       resource:
@@ -150,18 +84,3 @@ spec:
         target:
           type: Utilization
           averageUtilization: 60
-  behavior:
-    scaleUp:
-      stabilizationWindowSeconds: 0
-      policies:
-        - type: Pods
-          value: 2
-          periodSeconds: 60
-      selectPolicy: Max
-    scaleDown:
-      stabilizationWindowSeconds: 300
-      policies:
-        - type: Pods
-          value: 1
-          periodSeconds: 120
-      selectPolicy: Min
